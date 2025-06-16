@@ -1,5 +1,8 @@
 package com.scaler.userserviceapr21capstone.services;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.scaler.userserviceapr21capstone.dtos.SendEmailDto;
 import com.scaler.userserviceapr21capstone.models.Token;
 import com.scaler.userserviceapr21capstone.models.User;
 import com.scaler.userserviceapr21capstone.repositories.TokenRepository;
@@ -7,6 +10,7 @@ import com.scaler.userserviceapr21capstone.repositories.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -21,32 +25,54 @@ public class UserServiceImpl implements UserService
 
     private final UserRepository userRepository;
     private final TokenRepository tokenRepository;
+    private final ObjectMapper objectMapper;
+    private final KafkaTemplate<String, String> kafkaTemplate;
     BCryptPasswordEncoder bCryptPasswordEncoder;
     SecretKey secretKey;
 
     public UserServiceImpl(UserRepository userRepository,
                            TokenRepository tokenRepository,
                            BCryptPasswordEncoder bCryptPasswordEncoder,
-                           SecretKey secretKey) {
+                           SecretKey secretKey, ObjectMapper objectMapper,
+                           KafkaTemplate<String, String> kafkaTemplate) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
         this.secretKey = secretKey;
+        this.objectMapper = objectMapper;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     @Override
     public User signup(String name, String email, String password)
     {
-        if(userRepository.findByEmail(email).isPresent())
-        {
-            //throw an exception
-            return null;
-        }
+//        if(userRepository.findByEmail(email).isPresent())
+//        {
+//            //throw an exception
+//            return null;
+//        }
 
         User user = new User();
         user.setName(name);
         user.setEmail(email);
         user.setPassword(bCryptPasswordEncoder.encode(password));
+
+        SendEmailDto sendEmailDto = new SendEmailDto();
+        sendEmailDto.setFrom("ghosh.abhishek18459@gmail.com");
+        sendEmailDto.setSubject("User Registration Test");
+        sendEmailDto.setBody("Hello, " + name + "!");
+        sendEmailDto.setTo(email);
+
+        String sendEmailDtoString;
+
+        try {
+            sendEmailDtoString = objectMapper.writeValueAsString(sendEmailDto);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+
+        kafkaTemplate.send("sendEmail", sendEmailDtoString);
+
         return userRepository.save(user);
     }
 
